@@ -46,6 +46,7 @@ class WeatherTool(BaseTool):
 
                     return {
                         "tool": self.name,
+                        "source": "wttr.in",
                         "city": city,
                         "data": {
                             "temp": current.get("temp_C", "未知"),

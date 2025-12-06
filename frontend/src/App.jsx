@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import ChatArea from './components/ChatArea'
 import InputArea from './components/InputArea'
 import Toast from './components/Toast'
+import CustomerService from './pages/CustomerService'
 import { checkHealth, loadTools, sendChatMessage } from './api'
 import './App.css'
 
@@ -13,6 +14,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [toast, setToast] = useState({ show: false, message: '', type: 'info' })
   const [showWelcome, setShowWelcome] = useState(true)
+  const [currentPage, setCurrentPage] = useState('chat') // 'chat' | 'agent'
 
   useEffect(() => {
     // 初始化
@@ -119,12 +121,40 @@ function App() {
     handleSendMessage(query)
   }
 
+  // 如果是多Agent客服页面
+  if (currentPage === 'agent') {
+    return (
+      <div>
+        <button
+          onClick={() => setCurrentPage('chat')}
+          style={{
+            position: 'fixed',
+            top: '20px',
+            right: '20px',
+            zIndex: 1000,
+            background: 'rgba(168, 85, 247, 0.3)',
+            border: '1px solid rgba(168, 85, 247, 0.5)',
+            color: '#fff',
+            padding: '10px 20px',
+            borderRadius: '20px',
+            cursor: 'pointer'
+          }}
+        >
+          ← 返回 AI 助手
+        </button>
+        <CustomerService />
+      </div>
+    )
+  }
+
   return (
     <div className="app-container">
       <Sidebar
         tools={tools}
         onNewChat={handleNewChat}
         showToast={showToast}
+        onNavigate={setCurrentPage}
+        currentPage={currentPage}
       />
       <main className="main-content">
         <header className="top-bar">
@@ -134,6 +164,13 @@ function App() {
           </div>
           <div className="top-actions">
             <button className="btn-secondary" onClick={initApp}>Health Check</button>
+            <button
+              className="btn-secondary"
+              onClick={() => setCurrentPage('agent')}
+              style={{ background: 'linear-gradient(135deg, #a855f7, #7c3aed)' }}
+            >
+              🤖 多Agent客服
+            </button>
           </div>
         </header>
 
@@ -159,4 +196,3 @@ function App() {
 }
 
 export default App
-

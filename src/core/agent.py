@@ -58,13 +58,24 @@ class MultiTaskAgent:
         if not self.client:
             raise Exception("OpenAI 客户端未初始化")
 
-        response = self.client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            temperature=temperature,
-            max_tokens=1000
-        )
-        return response.choices[0].message.content
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=messages,
+                temperature=temperature,
+                max_tokens=1000
+            )
+
+            # 确保返回字符串
+            if hasattr(response, 'choices') and response.choices:
+                content = response.choices[0].message.content
+                return str(content) if content else ""
+            else:
+                # 如果响应格式不对，尝试转换
+                return str(response)
+        except Exception as e:
+            print(f"❌ LLM API 调用错误: {e}")
+            raise
 
     def _classify_task_with_llm(self, query: str) -> TaskType:
         """使用 LLM 分类任务"""
@@ -73,11 +84,16 @@ class MultiTaskAgent:
 
         try:
             messages = [
-                {"role": "system", "content": "你是一个问答分类专家。根据用户查询，将其分类为以下之一：WEATHER（天气查询）、NEWS（新闻查询）、SEARCH（搜索查询）或 QA（通用问答）。只返回分类名称，不要其他内容。"},
-                {"role": "user", "content": f"请分类这个查询：{query}"}
+                {"role": "system", "content": "你是一个问答分类专家。根据用户查询，将其分类为以下之一：WEATHER、NEWS、SEARCH或QA。只返回一个单词。"},
+                {"role": "user", "content": f"分类: {query}"}
             ]
 
             response = self._call_llm(messages, temperature=0.3)
+
+            if not response or not isinstance(response, str):
+                print(f"⚠️ LLM 返回无效响应: {type(response)}")
+                return self._classify_task_rule_based(query)
+
             classification = response.strip().upper()
 
             # 映射 LLM 输出到 TaskType
@@ -106,59 +122,10 @@ class MultiTaskAgent:
             return TaskType.QA
 
     def _generate_tool_calls_with_llm(self, query: str, task_type: TaskType) -> List[Dict[str, Any]]:
-        """使用 LLM 生成工具调用参数"""
-        if not self.use_llm:
-            return self._generate_tool_calls_rule_based(query, task_type)
-
-        try:
-            tools_info = self.tool_manager.get_tool_descriptions()
-
-            system_prompt = (
-                "你是一个智能助手。根据用户查询和可用工具，生成需要调用的工具和参数。\n\n"
-                f"可用工具：\n"
-                f"- weather: 查询天气，参数 city (城市名)\n"
-                f"- news: 获取新闻，参数 category (分类), limit (数量)\n"
-                f"- search: 搜索信息，参数 query (搜索词)\n"
-                f"- text_process: 文本处理，参数 text, action\n\n"
-                '只返回 JSON 数组，格式: [{"tool": "工具名", "params": {"参数名": "值"}}]\n'
-                '例如: [{"tool": "weather", "params": {"city": "北京"}}]\n'
-                '不要返回任何其他文字，只返回 JSON。'
-            )
-
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
-            ]
-
-            response = self._call_llm(messages, temperature=0.1)
-
-            # 清理并解析 JSON
-            response_clean = response.strip()
-
-            # 移除可能的 markdown 代码块
-            if "```json" in response_clean:
-                response_clean = response_clean.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_clean:
-                response_clean = response_clean.split("```")[1].split("```")[0].strip()
-
-            # 尝试找到 JSON 数组
-            start_idx = response_clean.find('[')
-            end_idx = response_clean.rfind(']')
-            if start_idx != -1 and end_idx != -1:
-                response_clean = response_clean[start_idx:end_idx + 1]
-
-            if not response_clean:
-                print(f"⚠️ LLM 返回空内容，使用规则引擎")
-                return self._generate_tool_calls_rule_based(query, task_type)
-
-            tool_calls = json.loads(response_clean)
-            return tool_calls if isinstance(tool_calls, list) else []
-        except json.JSONDecodeError as e:
-            print(f"⚠️ JSON 解析失败: {e}，LLM 返回: {response[:100] if 'response' in dir() else 'N/A'}")
-            return self._generate_tool_calls_rule_based(query, task_type)
-        except Exception as e:
-            print(f"⚠️ LLM 生成工具调用失败: {e}，使用规则引擎")
-            return self._generate_tool_calls_rule_based(query, task_type)
+        """使用 LLM 生成工具调用参数 - 使用规则引擎"""
+        # 由于 LLM 返回格式难以预测，直接使用规则引擎
+        # 这样更稳定、快速、可靠
+        return self._generate_tool_calls_rule_based(query, task_type)
 
     def _generate_tool_calls_rule_based(self, query: str, task_type: TaskType) -> List[Dict[str, Any]]:
         """基于规则生成工具调用"""
@@ -199,11 +166,24 @@ class MultiTaskAgent:
             if self.use_llm:
                 try:
                     messages = [
-                        {"role": "system", "content": "你是一个有用的问答助手，用简洁的中文回答问题。"},
+                        {"role": "system", "content": """你是一个专业、温暖且贴心的AI助手。请遵循以下回复原则：
+
+1. 避免使用模板化语言如"感谢您的咨询，还有什么可以帮助您的吗？"
+2. 根据用户问题类型调整语气：
+   - 紧急问题：快速响应，提供明确解决方案
+   - 困惑问题：详细解释，保持耐心
+   - 投诉问题：表达理解和歉意，提供具体帮助
+3. 提供价值增值：在基本回答基础上，主动提供相关的有用信息或建议
+4. 自然过渡：使用自然的语言引导到下一步，如"需要我为您..."、"如果您还想知道..."
+5. 保持真诚：用真实的语气表达关心和帮助的意愿
+6. 长度适中：回复既充分又简洁，避免过于简短或冗长
+
+请用温暖、专业、真诚的中文回答用户问题。"""},
                         {"role": "user", "content": query}
                     ]
                     return self._call_llm(messages, temperature=0.7)
-                except:
+                except Exception as e:
+                    print(f"⚠️ LLM 回答失败: {e}")
                     pass
             return f"抱歉，我无法处理您的查询: {query}"
 
@@ -213,26 +193,26 @@ class MultiTaskAgent:
 
         try:
             # 构建包含真实数据的 prompt
-            system_prompt = (
-                "你是一个智能助手。请根据以下【真实数据】回答用户问题。\n"
-                "要求：\n"
-                "1. 必须基于提供的真实数据回答，不要编造任何信息\n"
-                "2. 用自然流畅的中文表达\n"
-                "3. 如果数据来源是 'fallback'，说明这是备用数据\n"
-                "4. 保留关键数据（如温度、湿度等具体数值）\n"
-                "5. 回答简洁明了"
-            )
-
-            # 格式化工具结果
             data_str = self._format_tool_results_for_llm(tool_results)
 
             messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"用户问题：{query}\n\n【真实数据】：\n{data_str}"}
+                {"role": "system", "content": """你是一个专业、贴心的AI助手。基于用户问题和提供的数据，请生成温暖、有用且个性化的回复。
+
+回复时请：
+1. 直接使用数据回答用户问题，不要提及"根据数据"等字眼
+2. 提供实用的建议或相关的额外信息
+3. 如果是天气信息，给出穿衣建议或活动提醒
+4. 如果是新闻信息，突出重点或提供背景说明
+5. 如果是搜索结果，总结要点或提供进一步查询建议
+6. 用自然的语气表达，避免生硬和模板化
+7. 最后可以主动询问是否需要其他相关帮助
+
+目标：让用户感受到真诚的关心和专业的服务。"""},
+                {"role": "user", "content": f"用户问题：{query}\n\n数据来源：\n{data_str}"}
             ]
 
             response = self._call_llm(messages, temperature=0.5)
-            return response
+            return response if response else self._generate_response_rule_based(query, tool_results)
         except Exception as e:
             print(f"⚠️ LLM 润色失败: {e}，使用规则引擎")
             return self._generate_response_rule_based(query, tool_results)
@@ -288,14 +268,14 @@ class MultiTaskAgent:
         return "\n\n".join(formatted_parts)
 
     def _generate_response_rule_based(self, query: str, tool_results: List[Dict[str, Any]]) -> str:
-        """基于规则生成响应（备用方案）"""
+        """基于规则生成响应（备用方案） - 人性化版本"""
         if not tool_results:
-            return f"抱歉，我无法处理您的查询: {query}"
+            return f"抱歉，我现在无法处理您的查询。让我换个方式为您服务，或者您可以尝试重新描述一下需求。"
 
         first_result = tool_results[0] if tool_results else {}
 
         if "error" in first_result:
-            return f"工具执行失败: {first_result['error']}"
+            return f"抱歉，处理过程中遇到了一些问题：{first_result['error']}。让我尝试其他方式来帮助您。"
 
         tool_name = first_result.get("tool", "")
         source = first_result.get("source", "unknown")
@@ -303,34 +283,63 @@ class MultiTaskAgent:
         if tool_name == "weather":
             data = first_result.get("data", {})
             city = first_result.get("city", "")
-            response = f"📍 {city}的天气情况（数据来源: {source}）：\n"
-            response += f"  🌡️ 温度: {data.get('temp', 'N/A')}°C\n"
-            response += f"  🌤️ 天气: {data.get('condition', 'N/A')}\n"
-            response += f"  💧 湿度: {data.get('humidity', 'N/A')}%"
+            temp = data.get('temp', 'N/A')
+            condition = data.get('condition', 'N/A')
+            humidity = data.get('humidity', 'N/A')
+
+            # 人性化的天气回复
+            response = f"📍 {city}今天的天气情况：\n"
+            response += f"  🌡️ 当前温度 {temp}°C，{condition}\n"
+            response += f"  💧 湿度 {humidity}%\n"
+
+            # 添加实用建议
+            if temp != 'N/A':
+                if float(temp) < 10:
+                    response += f"\n💡 温度较低，建议您多穿一件外套保暖。"
+                elif float(temp) > 28:
+                    response += f"\n💡 天气较热，注意防暑降温，多补充水分。"
+                else:
+                    response += f"\n💡 温度适宜，很适合外出活动呢。"
+
             if data.get('wind_speed'):
-                response += f"\n  🌬️ 风速: {data.get('wind_speed')} km/h"
+                response += f"\n🌬️ 风速 {data.get('wind_speed')} km/h，户外活动时请注意防风。"
+
+            response += f"\n\n需要我为您查询其他城市的天气情况吗？"
             return response
 
         elif tool_name == "news":
             news_list = first_result.get("news", [])
-            response = f"📰 最新新闻（来源: {source}）：\n"
+            if not news_list:
+                return f"抱歉，暂时没有找到相关的新闻信息。需要我为您搜索其他内容吗？"
+
+            response = f"📰 为您找到了以下最新动态：\n"
             for i, news in enumerate(news_list, 1):
-                response += f"  {i}. {news.get('title', '无标题')}\n"
+                response += f"\n{i}. {news.get('title', '无标题')}\n"
                 if news.get('summary'):
-                    response += f"     {news.get('summary')[:100]}\n"
+                    response += f"   💭 {news.get('summary')[:120]}...\n"
+                if news.get('date'):
+                    response += f"   📅 {news.get('date')}\n"
+
+            response += f"\n这些信息中有您特别感兴趣的吗？我可以为您深入了解某个话题。"
             return response
 
         elif tool_name == "search":
             results = first_result.get("results", [])
-            response = f"🔍 搜索结果（来源: {source}）：\n"
+            search_query = first_result.get("query", "")
+            if not results:
+                return f"抱歉，关于「{search_query}」没有找到相关信息。让我换个关键词为您搜索，或者您可以提供更多细节？"
+
+            response = f"🔍 关于「{search_query}」为您找到了：\n"
             for i, result in enumerate(results, 1):
-                response += f"  {i}. {result.get('title', '无标题')}\n"
+                response += f"\n{i}. {result.get('title', '无标题')}\n"
                 if result.get('snippet'):
-                    response += f"     {result.get('snippet')[:100]}\n"
+                    response += f"   📝 {result.get('snippet')[:150]}...\n"
+
+            response += f"\n这些结果中有您想了解更多的吗？我可以为您提供更详细的信息。"
             return response
 
         else:
-            return f"已处理您的查询，结果: {json.dumps(first_result, ensure_ascii=False)}"
+            return f"我已经为您处理了查询，得到了一些信息。让我用更好的方式为您整理一下，请稍等..."
 
     async def process_query(self, query: str) -> Dict[str, Any]:
         """处理用户查询"""

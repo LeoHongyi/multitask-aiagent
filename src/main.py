@@ -15,6 +15,9 @@ from schemas.models import ChatRequest, ChatResponse, Message
 from utils.redis_manager import RedisManager
 from tools.tool_manager import ToolManager
 from core.agent import MultiTaskAgent
+from core.customer_service_agent import CustomerServiceAgent
+from api.customer_service_api import router as customer_service_router  # 客服中心API
+from agents.agent_router import router as agent_router  # 多Agent客服系统路由
 
 # 日志配置
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +27,7 @@ logger = logging.getLogger(__name__)
 redis_manager: Optional[RedisManager] = None
 tool_manager: Optional[ToolManager] = None
 agent: Optional[MultiTaskAgent] = None
+cs_agent: Optional[CustomerServiceAgent] = None
 
 # 前端静态文件路径
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
@@ -39,8 +43,10 @@ async def lifespan(app: FastAPI):
     redis_manager = RedisManager()
     tool_manager = ToolManager()
     agent = MultiTaskAgent(tool_manager)
+    cs_agent = CustomerServiceAgent()
 
     logger.info("✅ 内存存储初始化成功")
+    logger.info("✅ 智能客服中心Agent初始化成功")
 
     # 检查前端文件
     if FRONTEND_DIR.exists():
@@ -71,6 +77,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 注册API路由
+app.include_router(customer_service_router)
+app.include_router(agent_router)
 
 
 # ==================== API 端点 ====================
@@ -133,6 +143,63 @@ async def chat(request: ChatRequest) -> ChatResponse:
     except Exception as e:
         logger.error(f"处理查询失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
+
+
+@app.post("/api/customer-service/chat")
+async def customer_service_chat(
+    query: str,
+    session_id: Optional[str] = None,
+    channel: str = "web"
+):
+    """
+    智能客服专用对话接口
+
+    Args:
+        query: 客户查询内容
+        session_id: 会话ID（可选）
+        channel: 接入渠道
+
+    Returns:
+        客服回复结果
+    """
+    try:
+        global cs_agent
+        if cs_agent is None:
+            cs_agent = CustomerServiceAgent()
+
+        logger.info(f"客服对话请求: {query[:50]}...")
+
+        # 处理查询
+        result = await cs_agent.process_customer_service_query(query)
+
+        # 如果有会话ID，保存对话历史
+        if session_id and redis_manager:
+            try:
+                # 保存客户消息
+                redis_manager.cache_result(
+                    f"cs_session:{session_id}:customer",
+                    {"query": query, "timestamp": datetime.now().isoformat()},
+                    ttl=86400  # 24小时
+                )
+
+                # 保存客服回复
+                redis_manager.cache_result(
+                    f"cs_session:{session_id}:agent",
+                    {"response": result["response"], "timestamp": datetime.now().isoformat()},
+                    ttl=86400
+                )
+            except Exception as e:
+                logger.warning(f"保存会话历史失败: {e}")
+
+        # 添加会话信息
+        result["session_id"] = session_id
+        result["channel"] = channel
+
+        return result
+
+    except Exception as e:
+        logger.error(f"客服对话处理失败: {e}")
+        raise HTTPException(status_code=500, detail=f"客服对话处理失败: {str(e)}")
 
 
 @app.get("/api/session/{session_id}")
