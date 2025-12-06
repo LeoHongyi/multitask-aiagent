@@ -1,0 +1,128 @@
+.sidebar {
+  width: 260px;
+  background: rgba(20, 20, 35, 0.95);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 30px;
+}
+
+.logo-icon {
+  font-size: 24px;
+  color: #a855f7;
+}
+
+.logo-text {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.new-chat-btn {
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  transition: all 0.3s;
+  margin-bottom: 30px;
+}
+
+.new-chat-btn:hover {
+  background: rgba(168, 85, 247, 0.3);
+}
+
+.menu-section {
+  margin-bottom: 25px;
+}
+
+.menu-section h3 {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  letter-spacing: 1px;
+}
+
+.menu-list {
+  list-style: none;
+}
+
+.menu-list li {
+  padding: 10px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.2s;
+}
+
+.menu-list li:hover,
+.menu-list li.active {
+  background: rgba(168, 85, 247, 0.15);
+  color: #fff;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+}
+
+.upgrade-card {
+  background: rgba(30, 30, 50, 0.8);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+}
+
+.upgrade-icon {
+  font-size: 24px;
+}
+
+.upgrade-card h4 {
+  margin: 10px 0 8px;
+  font-size: 14px;
+}
+
+.upgrade-card p {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 15px;
+  line-height: 1.4;
+}
+
+.upgrade-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #a855f7, #7c3aed);
+  border: none;
+  color: #fff;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: transform 0.2s;
+}
+
+.upgrade-btn:hover {
+  transform: scale(1.02);
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    display: none;
+  }
+}
+
